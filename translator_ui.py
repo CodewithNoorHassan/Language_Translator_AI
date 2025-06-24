@@ -4,13 +4,16 @@ from dotenv import load_dotenv
 import os
 import asyncio
 
+# Load environment variables
 load_dotenv()
 gemini_api_key = os.getenv("GEMINI_API_KEY")
 
+# Check for API key
 if not gemini_api_key:
     st.error("❌ GEMINI_API_KEY is not set.")
     st.stop()
 
+# Configure AI model
 external_client = AsyncOpenAI(
     api_key=gemini_api_key,
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -27,7 +30,7 @@ config = RunConfig(
     tracing_disabled=True
 )
 
-# Languages with emojis for flair
+# Language options with emoji flair
 language_options = {
     "English": "🇬🇧",
     "Urdu": "🇵🇰",
@@ -44,67 +47,74 @@ language_options = {
     "Korean": "🇰🇷"
 }
 
-st.set_page_config(page_title="🌍 Multilingual Translator", page_icon="🌐", layout="wide")
+# Page config with real emoji (not surrogate pair)
+st.set_page_config(page_title="Translator", page_icon="🌐", layout="wide")
 
-# --- Header ---
+# Inject minimal Tailwind-style CSS (mimicked)
 st.markdown("""
     <style>
-    .header {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        color: #00b4d8;
-        text-align: center;
-        padding: 15px 0;
-        font-weight: 700;
+    .title {
         font-size: 3rem;
-        letter-spacing: 3px;
+        color: #0ea5e9;
+        font-weight: bold;
+        text-align: center;
+        margin-top: 20px;
+    }
+    .footer {
+        text-align: center;
+        font-size: 0.8rem;
+        color: gray;
+        margin-top: 40px;
+    }
+    .card {
+        background: #f0f9ff;
+        padding: 20px;
+        border-radius: 10px;
+        margin: 10px 0;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
     }
     </style>
 """, unsafe_allow_html=True)
-st.markdown('<div class="header">🌍 Multilingual Translator</div>', unsafe_allow_html=True)
 
-# --- Sidebar for language selection ---
+st.markdown('<div class="title">🌍 Multilingual Translator</div>', unsafe_allow_html=True)
+
+# Sidebar language selection
 with st.sidebar:
-    st.header("⚙️ Settings")
+    st.header("⚙️ Options")
     from_lang = st.selectbox(
         "Translate from:",
         options=list(language_options.keys()),
         index=0,
-        format_func=lambda x: f"{language_options[x]}  {x}"
+        format_func=lambda x: f"{language_options[x]} {x}"
     )
+
+    default_targets = [lang for lang in ["Urdu", "French", "Spanish"] if lang != from_lang]
     to_langs = st.multiselect(
         "Translate to:",
         options=[lang for lang in language_options.keys() if lang != from_lang],
-        default=["Urdu", "French", "Spanish"],
-        format_func=lambda x: f"{language_options[x]}  {x}"
+        default=default_targets,
+        format_func=lambda x: f"{language_options[x]} {x}"
     )
 
-# --- Input Section ---
+# Input area
 st.markdown("---")
-st.markdown("### ✍️ Enter Text to Translate")
-text = st.text_area(f"Type your text in {language_options[from_lang]} {from_lang} here...", height=160)
+st.subheader("✍️ Enter Text")
+text = st.text_area(f"Type your text in {language_options[from_lang]} {from_lang}:", height=160)
 
-# --- Translation card UI ---
-def translation_card(lang, text):
-    return f"""
-    <div style='
-        background: #caf0f8;
-        border-radius: 10px;
-        padding: 15px;
-        margin: 10px 0;
-        font-size: 1.1rem;
-        font-weight: 600;
-        color: #03045e;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
-    '>
-        <span style='font-size: 1.4rem;'>{language_options.get(lang,"🌐")} <strong>{lang}:</strong></span><br>{text}
+# Translation UI card
+def show_translation(lang, translated_text):
+    st.markdown(f"""
+    <div class='card'>
+        <span style='font-size:1.3rem'>{language_options.get(lang, '🌐')} <strong>{lang}</strong></span><br>
+        {translated_text}
     </div>
-    """
+    """, unsafe_allow_html=True)
 
+# Async translation
 async def get_translation(user_input, from_language, target_languages):
     instructions = f"""
-    You are a translation agent. Translate the following text from {from_language} into the languages:
+    You are a translation agent. Translate the following text from {from_language} into the following languages:
     {', '.join(target_languages)}.
-    
     Return translations clearly labeled like:
     Urdu: ...
     French: ...
@@ -113,31 +123,25 @@ async def get_translation(user_input, from_language, target_languages):
         name="Multilingual Translator Agent",
         instructions=instructions
     )
-    return await Runner.run(
-        agent,
-        input=user_input,
-        run_config=config
-    )
+    return await Runner.run(agent, input=user_input, run_config=config)
 
-# --- Button & Translation Display ---
+# Translate button
 if st.button("🔁 Translate", use_container_width=True):
     if not text.strip():
-        st.warning("⚠️ Please enter some text to translate!")
+        st.warning("⚠️ Enter text to translate.")
     elif not to_langs:
-        st.warning("⚠️ Please select at least one target language!")
+        st.warning("⚠️ Select at least one target language.")
     else:
         with st.spinner("⏳ Translating..."):
             try:
                 response = asyncio.run(get_translation(text, from_lang, to_langs))
-                st.success("✅ Translation completed!")
-                translations = response.final_output.split("\n")
-                for line in translations:
+                st.success("✅ Translation complete!")
+                for line in response.final_output.split("\n"):
                     if ":" in line:
-                        lang_label, trans_text = line.split(":", 1)
-                        st.markdown(translation_card(lang_label.strip(), trans_text.strip()), unsafe_allow_html=True)
+                        lang, trans = line.split(":", 1)
+                        show_translation(lang.strip(), trans.strip())
             except Exception as e:
-                st.error(f"❌ Error during translation: {e}")
+                st.error(f"❌ Error: {e}")
 
-# --- Footer ---
-st.markdown("---")
-st.markdown("<center><small>Created with ❤️ by Noor Hassan | Powered by Gemini API & Streamlit</small></center>", unsafe_allow_html=True)
+# Footer
+st.markdown("<div class='footer'>Created with ❤️ by Noor Hassan | Powered by Gemini API & Streamlit</div>", unsafe_allow_html=True)
