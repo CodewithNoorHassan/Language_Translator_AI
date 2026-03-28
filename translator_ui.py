@@ -1,8 +1,8 @@
 import streamlit as st
-from agents import Agent, Runner, AsyncOpenAI, OpenAIChatCompletionsModel, RunConfig
 from dotenv import load_dotenv
 import os
 import asyncio
+import google.generativeai as genai
 
 # Load environment variables
 load_dotenv()
@@ -13,22 +13,9 @@ if not gemini_api_key:
     st.error("❌ GEMINI_API_KEY is not set.")
     st.stop()
 
-# Configure AI model
-external_client = AsyncOpenAI(
-    api_key=gemini_api_key,
-    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
-)
-
-model = OpenAIChatCompletionsModel(
-    model="gemini-2.0-flash",
-    openai_client=external_client
-)
-
-config = RunConfig(
-    model=model,
-    model_provider=external_client,
-    tracing_disabled=True
-)
+# Configure Gemini API
+genai.configure(api_key=gemini_api_key)
+model = genai.GenerativeModel("gemini-2.0-flash")
 
 # Language options with emoji flair
 language_options = {
@@ -112,18 +99,18 @@ def show_translation(lang, translated_text):
 
 # Async translation
 async def get_translation(user_input, from_language, target_languages):
-    instructions = f"""
+    prompt = f"""
     You are a translation agent. Translate the following text from {from_language} into the following languages:
     {', '.join(target_languages)}.
+    
     Return translations clearly labeled like:
     Urdu: ...
     French: ...
+    
+    Text to translate: {user_input}
     """
-    agent = Agent(
-        name="Multilingual Translator Agent",
-        instructions=instructions
-    )
-    return await Runner.run(agent, input=user_input, run_config=config)
+    response = await asyncio.to_thread(model.generate_content, prompt)
+    return type('obj', (object,), {'final_output': response.text})()
 
 # Translate button
 if st.button("🔁 Translate", use_container_width=True):
